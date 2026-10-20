@@ -131,7 +131,21 @@ def _answer_question(
             metric = "sales"
             metric_label = "valor de vendas"
 
-        limit = 5 if "top 5" in normalized else 10
+        limit = (
+            5
+            if any(
+                phrase in normalized
+                for phrase in (
+                    "top 5",
+                    "5 produtos",
+                    "cinco produtos",
+                    "top cinco",
+                    "cinco mais",
+                    "5 mais",
+                )
+            )
+            else 10
+        )
 
         results = rank_sales(
             group_by=group_by,
@@ -144,13 +158,19 @@ def _answer_question(
             return "Não foram encontrados resultados para essa consulta."
 
         lines = []
+
         for index, item in enumerate(results, start=1):
             value = item["value"]
 
             if not isinstance(value, (int, float)):
                 raise ValueError("Analytics returned a non-numeric metric value.")
 
-            lines.append(f"{index}. {item['group']}: {_format_number(value)}")
+            if metric == "quantity":
+                formatted_value = str(int(value))
+            else:
+                formatted_value = _format_number(value)
+
+            lines.append(f"{index}. {item['group']}: {formatted_value}")
 
         return (
             f"Ranking por {group_by}, ordenado por {metric_label} "
