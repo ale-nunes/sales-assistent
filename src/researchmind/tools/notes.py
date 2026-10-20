@@ -3,6 +3,8 @@
 from researchmind.config import get_settings
 from researchmind.storage.notes import (
     read_note as read_stored_note,
+)
+from researchmind.storage.notes import (
     save_note as save_stored_note,
 )
 

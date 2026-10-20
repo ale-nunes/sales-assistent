@@ -3,7 +3,7 @@
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 MAX_TITLE_LENGTH = 200
@@ -62,7 +62,7 @@ def save_note(
     """Create a note or update an existing note with the same title."""
     title, content = _validate_note(title, content)
     path = _initialize_database(database_path)
-    updated_at = datetime.now(timezone.utc).isoformat()
+    updated_at = datetime.now(UTC).isoformat()
 
     with closing(sqlite3.connect(path)) as connection:
         connection.row_factory = sqlite3.Row
