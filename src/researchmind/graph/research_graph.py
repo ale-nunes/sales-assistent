@@ -77,42 +77,59 @@ def _build_gmail_query(question: str, today: date | None = None) -> str:
     """Convert supported Portuguese requests to safe Gmail search queries."""
     normalized = _normalize(question)
     current_date = today or date.today()
+    query_parts: list[str] = []
 
+    # Date filters
     if "ontem" in normalized:
         yesterday = current_date - timedelta(days=1)
         start_date = yesterday.strftime("%Y/%m/%d")
         end_date = current_date.strftime("%Y/%m/%d")
-        return f"after:{start_date} before:{end_date}"
-
-    if "hoje" in normalized:
+        query_parts.append(f"after:{start_date} before:{end_date}")
+    elif "hoje" in normalized:
         tomorrow = current_date + timedelta(days=1)
         start_date = current_date.strftime("%Y/%m/%d")
         end_date = tomorrow.strftime("%Y/%m/%d")
-        return f"after:{start_date} before:{end_date}"
+        query_parts.append(f"after:{start_date} before:{end_date}")
 
+    # Sender filter
     sender_match = re.search(
         r"\b[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}\b",
         question,
     )
     if sender_match:
-        return f"from:{sender_match.group(0)}"
+        query_parts.append(f"from:{sender_match.group(0)}")
 
+    # Subject filter
     subject_match = re.search(
-        r"(?:assunto|sobre|com o assunto)\s+['\"]?(.+?)['\"]?$",
+        r"(?:assunto|com o assunto)\s+['\"]?(.+?)['\"]?$",
         question,
         flags=re.IGNORECASE,
     )
     if subject_match:
         subject = subject_match.group(1).strip().strip("'\"")
         if subject:
-            return f"subject:{subject}"
+            query_parts.append(f"subject:({subject})")
+
+    # General content search, only when the user explicitly asks for a term.
+    content_match = re.search(
+        r"(?:mencionam|menciona|cont[eê]m|contendo|palavra|termo)\s+['\"]?(.+?)['\"]?$",
+        question,
+        flags=re.IGNORECASE,
+    )
+    if content_match:
+        term = content_match.group(1).strip().strip("'\"")
+        if term:
+            query_parts.append(f'"{term}"')
+
+    if query_parts:
+        return " ".join(query_parts)
 
     raise ValueError(
         "Não consegui transformar a pergunta em uma busca Gmail segura. "
-        "Informe se deseja pesquisar por data, endereço do remetente "
-        "ou assunto. Ex.: 'E-mails de hoje', "
-        "'E-mails de joao@empresa.com' ou "
-        "'E-mails com assunto orçamento'."
+        "Informe um período, endereço do remetente, assunto ou termo explícito. "
+        "Ex.: 'E-mails de hoje', 'E-mails de joao@empresa.com', "
+        "'E-mails com assunto orçamento' ou "
+        "'E-mails que mencionam pagamento'."
     )
 
 
