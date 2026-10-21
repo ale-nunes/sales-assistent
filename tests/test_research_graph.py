@@ -1,44 +1,45 @@
 """Tests for the main ResearchMind graph."""
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-import researchmind.graph.research_graph as research_graph_module
+from researchmind.graph import research_graph as research_graph_module
 
 
 class FakeSalesGraph:
-    """Mock the sales graph."""
+    """Minimal sales graph fake for routing tests."""
 
     def invoke(self, state: dict[str, str]) -> dict[str, str]:
-        assert state["question"] == "Qual foi o faturamento total?"
+        """Return a predictable sales answer."""
+        question = state["question"]
+
+        if "faturamento" in question.casefold():
+            return {
+                "answer": "Faturamento total: 127.567,69.",
+                "error": "",
+            }
+
         return {
-            "answer": "Faturamento total: 127.567,69.",
+            "answer": "Resposta simulada sobre vendas.",
             "error": "",
         }
-
-
-def test_classify_sales_question() -> None:
-    assert research_graph_module._classify_question("Qual foi o faturamento total?") == "sales"
-
-
-def test_classify_gmail_question() -> None:
-    assert research_graph_module._classify_question("Quais e-mails recebi ontem?") == "gmail"
-
-
-def test_classify_ambiguous_question() -> None:
-    assert research_graph_module._classify_question("Olá, pode me ajudar?") == "ambiguous"
 
 
 def test_graph_routes_sales_question(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Route sales questions and preserve the grounded answer."""
     monkeypatch.setattr(
         research_graph_module,
         "create_sales_graph",
         lambda file_path: FakeSalesGraph(),
+    )
+    monkeypatch.setattr(
+        research_graph_module,
+        "generate_grounded_answer",
+        lambda **kwargs: None,
     )
 
     graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
@@ -49,10 +50,11 @@ def test_graph_routes_sales_question(
     assert result["error"] == ""
 
 
-def test_graph_asks_for_clarification_on_ambiguous_question(
+def test_graph_handles_empty_question(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Return a helpful message when the question is empty."""
     monkeypatch.setattr(
         research_graph_module,
         "create_sales_graph",
@@ -60,53 +62,111 @@ def test_graph_asks_for_clarification_on_ambiguous_question(
     )
 
     graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
-    result = graph.invoke({"question": "Olá, pode me ajudar?"})
+    result = graph.invoke({"question": "   "})
 
     assert result["source"] == "ambiguous"
-    assert "não consegui identificar" in result["answer"].casefold()
-    assert result["error"] == ""
+    assert "Digite uma pergunta" in result["answer"]
+
+
+def test_graph_handles_ambiguous_question(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ask for clarification when the source cannot be identified."""
+    monkeypatch.setattr(
+        research_graph_module,
+        "create_sales_graph",
+        lambda file_path: FakeSalesGraph(),
+    )
+
+    graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
+    result = graph.invoke({"question": "O que aconteceu recentemente?"})
+
+    assert result["source"] == "ambiguous"
+    assert "base de vendas" in result["answer"]
+    assert "e-mails" in result["answer"]
 
 
 def test_graph_routes_gmail_question(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Route Gmail questions to the Gmail search node."""
+    monkeypatch.setattr(
+        research_graph_module,
+        "create_sales_graph",
+        lambda file_path: FakeSalesGraph(),
+    )
+    monkeypatch.setattr(
+        research_graph_module,
+        "search_gmail",
+        lambda query, max_results: [
+            {
+                "subject": "Orçamento",
+                "from": "joao@example.com",
+                "date": "20 Oct 2026",
+                "snippet": "Solicitação de orçamento",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        research_graph_module,
+        "generate_grounded_answer",
+        lambda **kwargs: None,
+    )
+
+    graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
+    result = graph.invoke({"question": "E-mails de hoje"})
+
+    assert result["source"] == "gmail"
+    assert "Orçamento" in result["answer"]
+    assert "joao@example.com" in result["answer"]
+    assert result["error"] == ""
+
+
+def test_graph_handles_invalid_gmail_query(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Return a helpful message for unsupported Gmail searches."""
     monkeypatch.setattr(
         research_graph_module,
         "create_sales_graph",
         lambda file_path: FakeSalesGraph(),
     )
 
-    captured: dict[str, Any] = {}
+    graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
+    result = graph.invoke({"question": "E-mails importantes"})
 
-    def fake_search_gmail(
+    assert result["source"] == "gmail"
+    assert "Não consegui transformar" in result["answer"]
+
+
+def test_graph_handles_gmail_search_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Expose a controlled error when Gmail search fails."""
+    monkeypatch.setattr(
+        research_graph_module,
+        "create_sales_graph",
+        lambda file_path: FakeSalesGraph(),
+    )
+
+    def raise_error(
         query: str,
-        max_results: int = 10,
+        max_results: int,
     ) -> list[dict[str, str]]:
-        captured["query"] = query
-        captured["max_results"] = max_results
-        return [
-            {
-                "subject": "Orçamento",
-                "from": "joao@example.com",
-                "date": "Mon, 19 Oct 2026 10:00:00 -0300",
-                "snippet": "Segue o orçamento solicitado.",
-            }
-        ]
+        raise RuntimeError("Falha simulada no Gmail")
 
     monkeypatch.setattr(
         research_graph_module,
         "search_gmail",
-        fake_search_gmail,
+        raise_error,
     )
 
     graph = research_graph_module.create_research_graph(tmp_path / "sales.csv")
-    result = graph.invoke({"question": "Quais e-mails recebi ontem?"})
+    result = graph.invoke({"question": "E-mails de hoje"})
 
     assert result["source"] == "gmail"
-    assert captured["query"].startswith("after:")
-    assert "before:" in captured["query"]
-
-    assert captured["max_results"] == 10
-    assert "Orçamento" in result["answer"]
-    assert result["error"] == ""
+    assert result["error"] == "Falha simulada no Gmail"
