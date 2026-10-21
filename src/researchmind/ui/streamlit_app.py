@@ -5,7 +5,7 @@ import logging
 import streamlit as st
 
 from researchmind.config import get_settings
-from researchmind.graph.sales_graph import create_sales_graph
+from researchmind.graph.research_graph import create_research_graph
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +21,14 @@ st.title("ResearchMind")
 st.caption("Assistente inteligente para consulta à base de vendas")
 
 st.info(
-    "As consultas de vendas utilizam exclusivamente as primeiras "
-    "1.000 linhas de dados do BaseVendas.csv. "
+    "Vendas: consultas limitadas às primeiras 1.000 linhas de BaseVendas.csv. "
+    "Gmail: pesquisa de mensagens com acesso somente para leitura. "
     "Nenhuma pesquisa na internet é realizada."
 )
 
-st.subheader("Consulte sua base de vendas")
+st.subheader("Consulte suas fontes autorizadas")
 
-st.write(
-    "Faça perguntas sobre vendas, lucro, quantidade, categorias, produtos, regiões e clientes."
-)
+st.write("Faça perguntas sobre a base de vendas ou sobre seus e-mails do Gmail.")
 
 with st.form("sales_question_form"):
     question = st.text_input(
@@ -51,7 +49,7 @@ if submitted:
         st.warning("Digite uma pergunta antes de consultar.")
     else:
         try:
-            graph = create_sales_graph()
+            graph = create_research_graph()
             result = graph.invoke({"question": question.strip()})
 
             if result.get("error"):
